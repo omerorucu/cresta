@@ -1,0 +1,21 @@
+[general]
+name=CRESTA
+qgisMinimumVersion=3.16
+qgisMaximumVersion=4.99
+supportsQt6=True
+description=CRESTA (Climate Resilience Ensemble Score & Topographic Analysis) computes a composite Climate Resilience Score (0–100) for plant species using ensemble ML models (GMM, Isolation Forest, One-Class SVM, K-Means), Mahalanobis distance, PCA, and percentile analysis across 19 bioclimatic variables and topographic factors.
+version=1.0.0
+author=Ömer K. Örücü (with Claude AI / Anthropic support)
+email=omerorucu@sdu.edu.tr
+about=CRESTA evaluates climate change resilience by comparing the bioclimatic niche (Bio1–Bio19) of a species' native distribution against a target area. The 5-layer ML ensemble (PCA, GMM, Isolation Forest, One-Class SVM, Mahalanobis Chi², K-Means) produces a composite score with climate (80%) and topography (20%) weighting. Score classes: A ≥ 80 Very High · B ≥ 65 High · C ≥ 50 Moderate · D ≥ 35 Low · E < 35 Very Low. Optional variables: solar radiation, wind speed, vapour pressure. Compatible with QGIS 3.16+ and QGIS 4.x (Qt5/Qt6). Developed at Süleyman Demirel University with Claude AI (Anthropic).
+tracker=https://github.com/omerorucu/CRESTA/issues
+repository=https://github.com/omerorucu/CRESTA
+tags=ecology, climate change, resilience, bioclimatic, species distribution, niche modelling, machine learning, ensemble, topography
+homepage=https://github.com/omerorucu/CRESTA
+category=Vector
+icon=resources/icon.png
+experimental=False
+deprecated=False
+changelog=
+    1.0.0 - Initial release. 5-layer ML ensemble, Qt5/Qt6 dual compatibility,
+            CSV + QGIS layer input, JSON/CSV export, interactive charts (matplotlib).
