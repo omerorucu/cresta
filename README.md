@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/icon.png" width="80" alt="CRESTA icon"/>
+  <img src="resources/icon.svg" width="80" alt="CRESTA icon"/>
 </p>
 
 <h1 align="center">CRESTA</h1>
