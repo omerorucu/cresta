@@ -3,19 +3,23 @@ name=CRESTA
 qgisMinimumVersion=3.16
 qgisMaximumVersion=4.99
 supportsQt6=True
-description=CRESTA (Climate Resilience Ensemble Score & Topographic Analysis) computes a composite Climate Resilience Score (0–100) for plant species using ensemble ML models (GMM, Isolation Forest, One-Class SVM, K-Means), Mahalanobis distance, PCA, and percentile analysis across 19 bioclimatic variables and topographic factors.
-version=1.0.0
-author=Ömer K. Örücü (with Claude AI / Anthropic support)
+description=CRESTA tests whether a target site lies inside a plant species' realised bioclimatic niche, using a cross-conformal ensemble (Mahalanobis with Ledoit-Wolf shrinkage, GMM, Isolation Forest, One-Class SVM). The 0-100 score is a monotone map of a calibrated p-value, and the plugin reports its own calibration, cross-validation, bootstrap CI and MESS extrapolation check. With optional future-climate input it also computes the climate-change response (DeltaScore).
+version=2.0.0
+author=Ömer K. Örücü
 email=omerorucu@sdu.edu.tr
-about=CRESTA evaluates climate change resilience by comparing the bioclimatic niche (Bio1–Bio19) of a species' native distribution against a target area. The 5-layer ML ensemble (PCA, GMM, Isolation Forest, One-Class SVM, Mahalanobis Chi², K-Means) produces a composite score with climate (80%) and topography (20%) weighting. Score classes: A ≥ 80 Very High · B ≥ 65 High · C ≥ 50 Moderate · D ≥ 35 Low · E < 35 Very Low. Optional variables: solar radiation, wind speed, vapour pressure. Compatible with QGIS 3.16+ and QGIS 4.x (Qt5/Qt6). Developed at Süleyman Demirel University with Claude AI (Anthropic).
+about=CRESTA compares the environment of a target site against the bioclimatic (Bio1-Bio19), topographic and optional climate variables recorded at a species' occurrence points, and tests the hypothesis that the site is exchangeable with those records. Calibration is by cross-conformal prediction (Vovk 2015), so the class thresholds carry an exact frequentist meaning: under that hypothesis P(class A) = 0.80, P(class A or B) = 0.90 and P(class E) = 0.01. Every run reports the calibration actually achieved on the user's data (KS uniformity test, empirical type-I error, null-model AUC), a bootstrap confidence interval, a MESS extrapolation flag, an ensemble-weight sensitivity analysis and a collinearity/effective-dimension diagnostic. Aspect is treated as a circular variable throughout, multi-cell target areas are scored cell by cell, and the analysis is refused rather than returning a meaningless number when the sample cannot support the variable set. WITHOUT future-climate input the analysis is site matching under the present climate, not a climate-change projection, and is labelled as such. REQUIRES scikit-learn, which is not shipped with QGIS (see requirements.txt). Developed at Süleyman Demirel University.
 tracker=https://github.com/omerorucu/CRESTA/issues
 repository=https://github.com/omerorucu/CRESTA
-tags=ecology, climate change, resilience, bioclimatic, species distribution, niche modelling, machine learning, ensemble, topography
+tags=ecology, climate change, bioclimatic, species distribution, niche modelling, conformal prediction, machine learning, calibration, topography
 homepage=https://github.com/omerorucu/CRESTA
 category=Vector
 icon=resources/icon.png
 experimental=False
 deprecated=False
 changelog=
-    1.0.0 - Initial release. 5-layer ML ensemble, Qt5/Qt6 dual compatibility,
-            CSV + QGIS layer input, JSON/CSV export, interactive charts (matplotlib).
+    2.0.0 - Scientific overhaul after peer review. Cross-conformal calibration
+            replaces hand-tuned score transforms; validation, uncertainty and
+            extrapolation layers added; circular aspect throughout; Ledoit-Wolf
+            shrinkage covariance; cell-wise target areas; optional future-climate
+            mode; singular samples refused instead of returning NaN.
+    1.0.0 - Initial release.

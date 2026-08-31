@@ -1,38 +1,63 @@
 """
 CRESTA — Climate Resilience Ensemble Score & Topographic Analysis
 ==================================================================
-QGIS Plugin  v1.0.0
-Main plugin class: integrates into the QGIS menu,
-opens the dialog window and triggers analysis.
+QGIS Plugin  v2.0.0
+Main plugin class: integrates into the QGIS menu, checks that the scientific
+stack is present, and opens the analysis dialog.
 
-Author : Ömer K. Örücü  (with Claude AI / Anthropic support)
+Author : Ömer K. Örücü
 License: GPL-3.0
 """
 
 import os
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QToolButton
+import sys
+
+from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import Qt, QSettings, QTranslator, QCoreApplication
-from qgis.core import QgsProject
-
-from .main_dialog import ClimateResilienceDialog
 
 
-# ── Qt5/Qt6 enum compatibility ──────────────────────────────────────────────
-# Qt6 (PyQt6) requires fully-scoped enums (Qt.ToolButtonStyle.ToolButtonIconOnly).
-# Qt5 (PyQt5) accepts both scoped and unscoped (_TB_ICON_ONLY).
-def _qt_attr(cls, *names):
-    for name in names:
-        obj = cls
+# --------------------------------------------------------------------------
+#  Dependency check
+#
+#  scikit-learn is NOT part of a standard QGIS install (verified on QGIS
+#  3.40 LTR and 4.2 on Windows).  v1.0's README claimed otherwise, so a user
+#  without it got a raw ImportError traceback in the Python console instead
+#  of an explanation.
+# --------------------------------------------------------------------------
+
+REQUIRED = [
+    ("numpy",   "1.21"),
+    ("scipy",   "1.7"),
+    ("sklearn", "1.0"),
+]
+
+
+def missing_dependencies():
+    """Return the list of required packages that cannot be imported."""
+    missing = []
+    for mod, minver in REQUIRED:
         try:
-            for part in name.split('.'):
-                obj = getattr(obj, part)
-            return obj
-        except AttributeError:
-            continue
-    return None
+            __import__(mod)
+        except ImportError:
+            missing.append((mod, minver))
+    return missing
 
-_TB_ICON_ONLY = _qt_attr(Qt, 'ToolButtonStyle.ToolButtonIconOnly', 'ToolButtonIconOnly')
+
+def _install_hint(missing):
+    names = {"sklearn": "scikit-learn"}
+    pkgs = " ".join(names.get(m, m) + ">=" + v for m, v in missing)
+    exe = sys.executable or "python"
+    return (
+        "CRESTA needs the following Python packages, which are not present in "
+        "this QGIS installation:\n\n"
+        "    " + ", ".join(names.get(m, m) for m, _ in missing) + "\n\n"
+        "Install them into the QGIS Python environment, then restart QGIS.\n\n"
+        "Windows — open the OSGeo4W Shell as administrator and run:\n"
+        "    python -m pip install " + pkgs + "\n\n"
+        "Linux / macOS:\n"
+        "    \"" + exe + "\" -m pip install " + pkgs + "\n\n"
+        "matplotlib is optional; without it the Charts tab is hidden."
+    )
 
 
 class CrestaPlugin:
@@ -44,46 +69,21 @@ class CrestaPlugin:
         self.menu       = "&CRESTA"
         self.toolbar    = self.iface.addToolBar("CRESTA")
         self.toolbar.setObjectName("CrestaToolbar")
-        # Force icon-only display so the action shows just the icon, not text
-        if _TB_ICON_ONLY is not None:
-            try:
-                self.toolbar.setToolButtonStyle(_TB_ICON_ONLY)
-            except Exception:
-                pass
-        self.dialog = None
-
-    def _resolve_icon(self):
-        """Find an icon file (svg preferred, png fallback)."""
-        for name in ("icon.svg", "icon.png"):
-            p = os.path.join(self.plugin_dir, "resources", name)
-            if os.path.exists(p):
-                return p
-        return None
 
     def add_action(self, icon_path, text, callback, parent=None):
-        icon = QIcon(icon_path) if icon_path else QIcon()
+        icon   = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
         action = QAction(icon, text, parent)
-        action.setToolTip(text)
-        action.setStatusTip(text)
         action.triggered.connect(callback)
         self.toolbar.addAction(action)
-        # Make sure the toolbar button shows icon only (no text label)
-        if _TB_ICON_ONLY is not None:
-            btn = self.toolbar.widgetForAction(action)
-            if isinstance(btn, QToolButton):
-                try:
-                    btn.setToolButtonStyle(_TB_ICON_ONLY)
-                except Exception:
-                    pass
         self.iface.addPluginToMenu(self.menu, action)
         self.actions.append(action)
         return action
 
     def initGui(self):
-        icon_path = self._resolve_icon()
+        icon_path = os.path.join(self.plugin_dir, "resources", "icon.png")
         self.add_action(
             icon_path,
-            text="CRESTA — Climate Resilience Analyzer",
+            text="CRESTA — Bioclimatic Niche Analyzer",
             callback=self.run,
             parent=self.iface.mainWindow(),
         )
@@ -92,23 +92,18 @@ class CrestaPlugin:
         for action in self.actions:
             self.iface.removePluginMenu("&CRESTA", action)
             self.iface.removeToolBarIcon(action)
-        if self.dialog is not None:
-            try:
-                self.dialog.close()
-            except Exception:
-                pass
-            self.dialog = None
         del self.toolbar
 
     def run(self):
-        # Non-modal: keep a single instance and just bring it to the front
-        # so the user can keep working on QGIS layers while it's open.
-        if self.dialog is None:
-            self.dialog = ClimateResilienceDialog(self.iface, self.iface.mainWindow())
-            self.dialog.destroyed.connect(self._on_dialog_destroyed)
-        self.dialog.show()
-        self.dialog.raise_()
-        self.dialog.activateWindow()
+        missing = missing_dependencies()
+        if missing:
+            QMessageBox.critical(self.iface.mainWindow(),
+                                 "CRESTA — missing dependencies",
+                                 _install_hint(missing))
+            return
 
-    def _on_dialog_destroyed(self, *args):
-        self.dialog = None
+        # Imported lazily so the dependency dialog above can be shown first.
+        from .main_dialog import ClimateResilienceDialog
+        dialog = ClimateResilienceDialog(self.iface)
+        # exec_() was removed in Qt6; exec() works on both Qt5 and Qt6.
+        dialog.exec()
