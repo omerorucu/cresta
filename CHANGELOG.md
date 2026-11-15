@@ -3,6 +3,52 @@
 All notable changes to CRESTA are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.2.0] — 2026-11-15
+
+### Fixed — bounded ensemble members ignored extrapolation
+
+- Isolation-forest path lengths and the RBF one-class-SVM decision value are
+  bounded: beyond the occurrence data they settle on a constant. In a
+  synthetic warming test (*Pinus brutia*, bio1 + bio5 shifted by k SD) the
+  isolation forest alone returned p = 0.41 at 3, 10, 20 and 50 SD, so the
+  two members diluted the unbounded Mahalanobis and GMM members.
+- Both members now add the Euclidean distance (standardised units) by which
+  a point lies outside the per-variable range of the records each fold model
+  was fitted on (`EXTRAPOLATION_PENALTY`, `BOUNDED_MEMBERS`). The term is 0
+  inside that envelope, so in-range scores are unchanged, and it is part of
+  the score function fixed before calibration, so conformal validity holds.
+  Same test: isolation forest alone p = 0.070 at 3 SD and 1/(n+1) from 10 SD.
+- `EXTRAPOLATION_PENALTY = False` reproduces v2.1.
+
+## [2.1.0] — not released separately; included in 2.2.0
+
+### Fixed — validation was tautological
+
+- v2.0's 🧪 Validation tab tested `self_p`, the rank of each record's
+  out-of-fold score among the pooled out-of-fold scores. Ranks of any
+  continuous statistic are Uniform by construction, so the KS test, the
+  empirical type-I error and the "own records in class A" share could not
+  fail whatever the model did. The figures quoted for v2.0 below
+  (A = 81 %, type-I 0.83 %) are therefore not evidence of calibration.
+- Validation now uses **held-out p-values**: each outer fold (spatial blocks
+  when coordinates are supplied) is withheld, a complete cross-conformal
+  predictor is fitted on the remaining records (inner folds spatial as
+  well), and the withheld records are scored as new targets.
+- New diagnostic `rejection_rate_if_random_calibration`: the same spatial
+  hold-out scored by a predictor calibrated with random folds. It shows how
+  optimistic a randomly cross-validated calibration would be at new
+  locations (Roberts et al. 2017). A new test (`test_validation_can_fail`)
+  confirms the check is falsifiable.
+
+### Added
+
+- `ClimateResilienceAnalyzer.score_matrix(rows)`: scores any number of
+  target rows (cells × scenarios, or other species' ranges) with the cached
+  fold models. The fold models depend on the occurrence records only, so the
+  result is bit-identical to passing the rows as targets
+  (`test_batch_scoring_equals_target_scoring`), at a fraction of the cost.
+  Returns p, score, class and vectorised MESS.
+
 ## [2.0.0] — 2026-08-30
 
 Scientific overhaul in response to a peer review of v1.0. The score's

@@ -1,9 +1,9 @@
 """
 CRESTA — Climate Resilience Ensemble Score & Topographic Analysis
-Conformal bioclimatic niche analysis for QGIS.  v2.0.0
+Conformal bioclimatic niche analysis for QGIS.  v2.2.0
 """
 
-__version__ = "2.0.0"
+__version__ = "2.2.0"
 
 
 def classFactory(iface):
