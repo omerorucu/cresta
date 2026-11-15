@@ -1,5 +1,5 @@
 """
-CRESTA v2.0.0  —  Main Dialog
+CRESTA v2.2.0  —  Main Dialog
 ==============================
 QGIS dialog for the conformal bioclimatic niche analyser.
 
@@ -295,7 +295,7 @@ class ClimateResilienceDialog(QDialog):
 
     def _setup_ui(self):
         self.setWindowTitle(
-            "🌿 CRESTA v2.0.0  |  Conformal Bioclimatic Niche Analysis"
+            "🌿 CRESTA v2.2.0  |  Conformal Bioclimatic Niche Analysis"
         )
         # Window icon
         _icon_path = os.path.join(os.path.dirname(__file__), "resources", "icon.png")
@@ -305,7 +305,7 @@ class ClimateResilienceDialog(QDialog):
         main = QVBoxLayout(self)
 
         title = QLabel(
-            "🌿 CRESTA  v2.0.0  ·  cross-conformal ensemble  ·  "
+            "🌿 CRESTA  v2.2.0  ·  cross-conformal ensemble  ·  "
             "Mahalanobis (shrinkage) · GMM · Isolation Forest · One-Class SVM"
         )
         title.setAlignment(Qt_AlignCenter)

@@ -4,7 +4,7 @@ qgisMinimumVersion=3.16
 qgisMaximumVersion=4.99
 supportsQt6=True
 description=CRESTA tests whether a target site lies inside a plant species' realised bioclimatic niche, using a cross-conformal ensemble (Mahalanobis with Ledoit-Wolf shrinkage, GMM, Isolation Forest, One-Class SVM). The 0-100 score is a monotone map of a calibrated p-value, and the plugin reports its own calibration, cross-validation, bootstrap CI and MESS extrapolation check. With optional future-climate input it also computes the climate-change response (DeltaScore).
-version=2.0.0
+version=2.2.0
 author=Ömer K. Örücü
 email=omerorucu@sdu.edu.tr
 about=CRESTA compares the environment of a target site against the bioclimatic (Bio1-Bio19), topographic and optional climate variables recorded at a species' occurrence points, and tests the hypothesis that the site is exchangeable with those records. Calibration is by cross-conformal prediction (Vovk 2015), so the class thresholds carry an exact frequentist meaning: under that hypothesis P(class A) = 0.80, P(class A or B) = 0.90 and P(class E) = 0.01. Every run reports the calibration actually achieved on the user's data (KS uniformity test, empirical type-I error, null-model AUC), a bootstrap confidence interval, a MESS extrapolation flag, an ensemble-weight sensitivity analysis and a collinearity/effective-dimension diagnostic. Aspect is treated as a circular variable throughout, multi-cell target areas are scored cell by cell, and the analysis is refused rather than returning a meaningless number when the sample cannot support the variable set. WITHOUT future-climate input the analysis is site matching under the present climate, not a climate-change projection, and is labelled as such. REQUIRES scikit-learn, which is not shipped with QGIS (see requirements.txt). Developed at Süleyman Demirel University.
@@ -17,6 +17,10 @@ icon=resources/icon.png
 experimental=False
 deprecated=False
 changelog=
+    2.2.0 - Isolation forest and one-class SVM made extrapolation-aware
+            (distance outside the training envelope); batch scoring
+            (score_matrix); held-out spatial validation replaces the
+            tautological v2.0 self-calibration check.
     2.0.0 - Scientific overhaul after peer review. Cross-conformal calibration
             replaces hand-tuned score transforms; validation, uncertainty and
             extrapolation layers added; circular aspect throughout; Ledoit-Wolf

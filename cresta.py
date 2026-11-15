@@ -1,7 +1,7 @@
 """
 CRESTA — Climate Resilience Ensemble Score & Topographic Analysis
 ==================================================================
-QGIS Plugin  v2.0.0
+QGIS Plugin  v2.2.0
 Main plugin class: integrates into the QGIS menu, checks that the scientific
 stack is present, and opens the analysis dialog.
 

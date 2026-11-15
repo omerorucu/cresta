@@ -284,6 +284,62 @@ def test_results_contract_for_the_gui():
         assert k in r, f"missing result block: {k}"
 
 
+def test_validation_can_fail():
+    """v2.1: the calibration check must be falsifiable.  v2.0 tested the ranks
+    of the pooled out-of-fold alphas, which are Uniform whatever the model;
+    held-out spatial blocks with a different climate must now be flagged."""
+    sp, rng = make_data(n=200)
+    n = len(sp)
+    # 20 well-separated sites x 10 records; each site has its own climate
+    # offset, so a held-out site is genuinely unlike the training sites.
+    site = np.repeat(np.arange(20), 10)
+    centre = rng.uniform(0, 100, (20, 2))
+    xy = centre[site] + rng.normal(0, 0.3, (n, 2))
+    sp = sp.copy()
+    sd = sp.std(axis=0)
+    sp[:, :19] = (sp[:, :19].mean(axis=0) + 0.15 * (sp[:, :19] - sp[:, :19].mean(axis=0))
+                  + rng.normal(0, 1.5, (20, 19))[site] * sd[:19])
+    r = analyse(sp, np.median(sp, axis=0), coords=xy)
+    v = r["validation"]
+    assert v["fold_type"] == "spatial_block"
+    # spatially calibrated: valid for new sites
+    assert v["empirical_rejection_rate"]["alpha_0.05"] <= 0.09, v["empirical_rejection_rate"]
+    # randomly calibrated: the same held-out sites are rejected far too often
+    assert v["rejection_rate_if_random_calibration"]["alpha_0.05"] > 0.15, \
+        v["rejection_rate_if_random_calibration"]
+
+
+def test_batch_scoring_equals_target_scoring():
+    """v2.1: score_matrix() with the cached fold models must reproduce the
+    p-values of targets passed at construction time exactly."""
+    sp, rng = make_data()
+    med = np.median(sp, axis=0)
+    fut = med.copy(); fut[0] += 35; fut[11] -= 130
+    cells = sp[rng.choice(len(sp), 25, replace=False)] + rng.normal(0, 4, (25, 22))
+    a = ClimateResilienceAnalyzer(sp, med, bio_cols=ALL_BIO_COLS,
+                                  topo_cols=ALL_TOPO_COLS, opt_cols=[],
+                                  target_future=fut, target_cells=cells,
+                                  n_refit_bootstrap=0, compute_subspaces=False)
+    core = a._run_core()
+    ref = np.array(core["p_values"])
+    rows = np.vstack([med, fut, cells])
+    out = a.score_matrix(rows)
+    assert np.array_equal(out["p"], ref), (out["p"][:3], ref[:3])
+    # MESS identical to the single-row routine
+    m0 = a.compute_extrapolation()["mess"]
+    assert abs(round(float(out["mess"][0]), 2) - m0) < 1e-9
+    # NaN rows stay NaN and never become class E
+    bad = med.copy(); bad[3] = np.nan
+    o2 = a.score_matrix(np.vstack([med, bad]))
+    assert np.isnan(o2["p"][1]) and o2["class"][1] == ""
+    # wrong width is refused
+    try:
+        a.score_matrix(med[:-1].reshape(1, -1))
+        raise AssertionError("width mismatch accepted")
+    except ValueError:
+        pass
+
+
 # ---------------------------------------------------------------- runner
 
 def main():
@@ -291,7 +347,7 @@ def main():
              if n.startswith("test_") and callable(o)]
     passed, failed = 0, []
     print("=" * 70)
-    print("  CRESTA v2.0 engine test suite  (%d tests)" % len(tests))
+    print("  CRESTA v2.1 engine test suite  (%d tests)" % len(tests))
     print("=" * 70)
     for name, fn in tests:
         try:

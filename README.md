@@ -5,7 +5,7 @@
 <h1 align="center">CRESTA</h1>
 <p align="center">
   <strong>Climate Resilience Ensemble Score &amp; Topographic Analysis</strong><br>
-  Conformal bioclimatic niche analysis for QGIS · v2.0.0
+  Conformal bioclimatic niche analysis for QGIS · v2.2.0
 </p>
 
 <p align="center">
@@ -213,7 +213,7 @@ climate-change mode, and the result contract the GUI depends on.
 
 ```
 Örücü, Ö. K. (2026). CRESTA: conformal bioclimatic niche analysis for QGIS
-(v2.0.0). https://github.com/omerorucu/CRESTA
+(v2.2.0). https://github.com/omerorucu/CRESTA
 ```
 
 ---

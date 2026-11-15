@@ -181,6 +181,20 @@ SCORE_BANDS = [   # (p_low, p_high, score_low, score_high)
 ENSEMBLE_WEIGHTS = {"mahalanobis": 0.25, "gmm": 0.25,
                     "isolation_forest": 0.25, "ocsvm": 0.25}
 
+# v2.2: extrapolation-aware bounded members.  Isolation-forest path lengths
+# and the RBF one-class-SVM decision value are BOUNDED: far beyond the
+# training data they settle on a constant, so a target 50 SD outside the
+# species' climate looks no more atypical to them than one just outside the
+# edge, and they dilute the unbounded members (Mahalanobis, GMM) in the
+# ensemble.  The fix adds, to these two members only, the Euclidean distance
+# (standardised units) by which a point lies outside the per-variable range
+# of the records the fold bundle was fitted on.  It is exactly 0 inside that
+# envelope, so in-range scores are unchanged, and it is part of the score
+# function fixed before calibration, so conformal validity is untouched.
+# Set to False to reproduce v2.1 behaviour.
+EXTRAPOLATION_PENALTY = True
+BOUNDED_MEMBERS = ("isolation_forest", "ocsvm")
+
 # Topographic sub-weights, used ONLY for the descriptive topo-compatibility
 # figure.  The composite itself no longer applies arbitrary climate/topo
 # weights - topography enters the unified non-conformity statistic directly.
@@ -583,7 +597,7 @@ class ClimateResilienceAnalyzer:
         uncertainty as well as calibration uncertainty).  0 disables it.
     """
 
-    VERSION = "2.0"
+    VERSION = "2.2"
 
     def __init__(self, species_data, target_values,
                  bio_cols=None, topo_cols=None, opt_cols=None,
@@ -924,6 +938,8 @@ class ClimateResilienceAnalyzer:
             b["ocsvm"] = OneClassSVM(nu=0.10, kernel="rbf",
                                      gamma="scale").fit(Z_fit)
 
+        b["env_lo"] = Z_fit.min(axis=0)
+        b["env_hi"] = Z_fit.max(axis=0)
         raw = self._raw_components(b, Z_fit)
         b["mu"] = {k: float(np.mean(v)) for k, v in raw.items()}
         b["sd"] = {k: (float(np.std(v)) or 1.0) for k, v in raw.items()}
@@ -949,8 +965,26 @@ class ClimateResilienceAnalyzer:
     def _standardise(self, b, raw):
         return {k: (raw[k] - b["mu"][k]) / b["sd"][k] for k in self.MODEL_KEYS}
 
+    @staticmethod
+    def _envelope_excess(b, Z):
+        """Distance (standardised units) outside the fit records' per-variable
+        range; 0 inside the envelope."""
+        Z = np.atleast_2d(np.asarray(Z, dtype=float))
+        if "env_lo" not in b:
+            return np.zeros(Z.shape[0])
+        d = np.maximum(0.0, np.maximum(Z - b["env_hi"], b["env_lo"] - Z))
+        return np.sqrt(np.sum(d * d, axis=1))
+
+    def _penalise(self, b, Z, comp):
+        """Add the envelope excess to the bounded members (in place)."""
+        if EXTRAPOLATION_PENALTY:
+            e = self._envelope_excess(b, Z)
+            for k in BOUNDED_MEMBERS:
+                comp[k] = comp[k] + e
+        return comp
+
     def _components(self, b, Z):
-        return self._standardise(b, self._raw_components(b, Z))
+        return self._penalise(b, Z, self._standardise(b, self._raw_components(b, Z)))
 
     @classmethod
     def _combine(cls, comp, weights):
@@ -1031,7 +1065,7 @@ class ClimateResilienceAnalyzer:
             bics.append(b["gmm_bic"])
 
             raw_te = self._raw_components(b, Z[te])
-            c_te   = self._standardise(b, raw_te)
+            c_te   = self._penalise(b, Z[te], self._standardise(b, raw_te))
             alphas[te]  = self._combine(c_te, ENSEMBLE_WEIGHTS)
             fold_of[te] = fi
             for k in self.MODEL_KEYS:
@@ -1039,7 +1073,7 @@ class ClimateResilienceAnalyzer:
                 raw_rec[k][te]  = raw_te[k]
 
             raw_tg = self._raw_components(b, z_targets)
-            c_tg   = self._standardise(b, raw_tg)
+            c_tg   = self._penalise(b, z_targets, self._standardise(b, raw_tg))
             for mi, k in enumerate(self.MODEL_KEYS):
                 comp_tgt[fi, :, mi] = c_tg[k]
                 raw_tgt[fi, :, mi]  = raw_tg[k]
@@ -1605,10 +1639,53 @@ class ClimateResilienceAnalyzer:
         idx = rng.integers(0, n, size=(m, self.Z.shape[1]))
         return np.take_along_axis(self.Z, idx, axis=0)
 
+    def _heldout_pvalues(self):
+        """Genuinely out-of-sample conformal p-values for the occurrence records.
+
+        v2.0 validated calibration with core["self_p"], the rank of each
+        record's out-of-fold alpha among the pooled alphas.  Ranks of any
+        continuous statistic are Uniform by construction, so that KS test,
+        the empirical type-I error and the 'own records in class A' figure
+        could not fail whatever the model did.
+
+        Here every outer fold (spatial blocks when coordinates exist) is held
+        out, a complete cross-conformal predictor is built on the remaining
+        records (inner folds are spatial too), and the held-out records are
+        scored as ordinary targets.  Under exchangeability these p-values are
+        (super-)uniform; spatial non-exchangeability - the transfer problem
+        any range-wide projection faces - shows up as an excess of small
+        p-values, i.e. an empirical rejection rate above the nominal level.
+        """
+        return self._heldout(inner_random=False)
+
+    def _heldout(self, inner_random=False):
+        """Held-out p-values; inner_random=True calibrates the inner
+        predictor with random folds while the outer folds stay spatial.
+        The difference between the two measures how optimistic a randomly
+        cross-validated calibration would be for new locations."""
+        key = "heldout_p_rnd" if inner_random else "heldout_p"
+        if key in self._cache:
+            return self._cache[key]
+        n = int(self.Z.shape[0])
+        outer = self._make_folds(n)
+        p = np.full(n, np.nan)
+        saved = self.coords
+        for tr, te in outer:
+            self.coords = (None if (inner_random or saved is None) else saved[tr])
+            try:
+                r = self._crossconformal(self.Z[tr], self.Z[te], tag="_heldout_tmp")
+            finally:
+                self.coords = saved
+            p[te] = r["p_values"]
+        self._cache.pop("_heldout_tmp", None)
+        self._cache[key] = p
+        self._cache["heldout_nfolds"] = len(outer)
+        return p
+
     def compute_validation(self):
         core = self._run_core()
-        self_p = np.asarray(core["self_p"], dtype=float)
-        sp = self_p[np.isfinite(self_p)]
+        held = self._heldout_pvalues()
+        sp = held[np.isfinite(held)]
 
         ks_stat = ks_p = None
         if sp.size >= 8:
@@ -1619,6 +1696,16 @@ class ClimateResilienceAnalyzer:
 
         rej = {f"alpha_{a:.2f}": round(float(np.mean(sp < a)), 4)
                for a in (0.01, 0.05, 0.10, 0.20)} if sp.size else {}
+
+        # Spatial optimism: the same spatial hold-out, but the inner
+        # calibration uses random folds.  Only meaningful with coordinates.
+        optimism = None
+        if self.coords is not None:
+            pr = self._heldout(inner_random=True)
+            pr = pr[np.isfinite(pr)]
+            if pr.size:
+                optimism = {f"alpha_{a:.2f}": round(float(np.mean(pr < a)), 4)
+                            for a in (0.01, 0.05, 0.10, 0.20)}
 
         scores = np.array([score_from_pvalue(x) for x in sp]) if sp.size else np.array([])
         def _cls(s):
@@ -1673,14 +1760,19 @@ class ClimateResilienceAnalyzer:
                    "distributions; interpret the multivariate score cautiously)."))
 
         r = {
-            "method": ("Cross-conformal self-calibration: every occurrence "
-                       "record is scored by a model fitted without its fold, "
-                       "then ranked against the others."),
+            "method": ("Held-out calibration (v2.1): each outer fold of "
+                       "occurrence records (spatial blocks when coordinates "
+                       "are supplied) is withheld, a complete cross-conformal "
+                       "predictor is fitted on the rest, and the withheld "
+                       "records are scored as new targets. Their p-values "
+                       "are tested for uniformity."),
+            "n_outer_folds": int(self._cache.get("heldout_nfolds", 0)),
             "n_calibration_records": int(sp.size),
             "pvalue_resolution": core["resolution"],
             "ks_uniformity_statistic": round(ks_stat, 4) if ks_stat is not None else None,
             "ks_uniformity_pvalue": round(ks_p, 5) if ks_p is not None else None,
             "empirical_rejection_rate": rej,
+            "rejection_rate_if_random_calibration": optimism,
             "self_class_counts": dist,
             "self_class_percent": dist_pct,
             "self_score_mean": round(float(scores.mean()), 2) if scores.size else None,
@@ -2138,6 +2230,89 @@ class ClimateResilienceAnalyzer:
         }
         self.results["target_area"] = r
         return r
+
+    # ==================================================================
+    #  BATCH SCORING  (v2.1)
+    # ==================================================================
+    #  The fold models of the cross-conformal predictor are fitted on the
+    #  occurrence records only; a target never influences them.  Scoring an
+    #  arbitrary number of rows afterwards with the cached fold models is
+    #  therefore exactly equivalent to having passed those rows as targets
+    #  from the start - but the expensive fit is done once.  This is what
+    #  makes cell-wise, multi-scenario work (k GCMs x SSPs x periods over
+    #  thousands of cells) and cross-species scoring practical.
+
+    BATCH_CHUNK = 20000
+
+    def score_matrix(self, rows, with_mess=True):
+        """Score many raw target rows (n x n_vars, same column order as the
+        occurrence data) with the already fitted cross-conformal predictor.
+
+        Rows with any non-finite value get NaN.  Returns a dict of arrays:
+        p, score, class (A-E, '' for NaN) and, if requested, MESS and the
+        index of its limiting feature (Elith et al. 2010, identical to
+        compute_extrapolation()).
+        """
+        self._run_core()
+        c = self._cache["full"]
+        R = np.atleast_2d(np.asarray(rows, dtype=float))
+        if R.shape[1] != self.n_vars:
+            raise ValueError(f"score_matrix: {self.n_vars} columns expected "
+                             f"({', '.join(self.col_names)}), got {R.shape[1]}.")
+        n_rows = R.shape[0]
+        ok = np.all(np.isfinite(R), axis=1)
+        p = np.full(n_rows, np.nan)
+        mess = np.full(n_rows, np.nan)
+        lim = np.full(n_rows, -1, dtype=int)
+
+        keep = self.collinearity["kept_indices"]
+        fin = np.isfinite(c["alphas"])
+        fold_alphas = [np.sort(c["alphas"][(c["fold_of"] == fi) & fin])
+                       for fi in range(len(c["bundles"]))]
+        F_ref = self.F
+        lo, hi = F_ref.min(axis=0), F_ref.max(axis=0)
+        rng_ = np.where((hi - lo) == 0, 1e-9, hi - lo)
+        srt_ref = np.sort(F_ref, axis=0)
+        n_ref = F_ref.shape[0]
+
+        idx_ok = np.where(ok)[0]
+        for s in range(0, idx_ok.size, self.BATCH_CHUNK):
+            ii = idx_ok[s:s + self.BATCH_CHUNK]
+            Fr = self._build_features(R[ii])[0]
+            Zt = self.scaler.transform(Fr[:, keep])
+            cnt = np.zeros(ii.size)
+            for fi, b in enumerate(c["bundles"]):
+                a_t = self._combine(self._components(b, Zt), ENSEMBLE_WEIGHTS)
+                fa = fold_alphas[fi]
+                good = np.isfinite(a_t)
+                cnt[good] += fa.size - np.searchsorted(fa, a_t[good], side="left")
+            p[ii] = (1.0 + cnt) / (c["n"] + 1.0)
+
+            if with_mess:
+                S = np.empty_like(Fr)
+                for j in range(Fr.shape[1]):
+                    t = Fr[:, j]
+                    f = np.searchsorted(srt_ref[:, j], t, side="left") / n_ref * 100.0
+                    S[:, j] = np.where(
+                        f == 0.0, (t - lo[j]) / rng_[j] * 100.0,
+                        np.where(f < 50.0, 2.0 * f,
+                                 np.where(f < 100.0, 2.0 * (100.0 - f),
+                                          (hi[j] - t) / rng_[j] * 100.0)))
+                mess[ii] = S.min(axis=1)
+                lim[ii] = S.argmin(axis=1)
+
+        score = np.array([score_from_pvalue(x) for x in p])
+        cls = np.array(["" if not np.isfinite(v) else
+                        "A" if v >= 80 else "B" if v >= 65 else
+                        "C" if v >= 50 else "D" if v >= 35 else "E"
+                        for v in score])
+        out = {"p": p, "score": score, "class": cls,
+               "resolution": 1.0 / (c["n"] + 1.0),
+               "feature_names": list(self.f_names)}
+        if with_mess:
+            out["mess"] = mess
+            out["mess_limiting_index"] = lim
+        return out
 
     # ==================================================================
     #  COMPOSITE
